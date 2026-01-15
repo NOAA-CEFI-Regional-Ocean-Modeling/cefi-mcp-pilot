@@ -3,14 +3,6 @@
 import pytest
 
 
-@pytest.fixture(scope='session')
-def event_loop_policy():
-    """Use asyncio event loop for async tests"""
-    import asyncio  # noqa: PLC0415
-
-    return asyncio.DefaultEventLoopPolicy()
-
-
 @pytest.fixture(autouse=True)
 def clear_caches():
     """Clear LRU caches before each test to ensure isolation"""
