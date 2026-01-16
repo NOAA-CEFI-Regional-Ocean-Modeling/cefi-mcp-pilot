@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from cefi_mcp.utils import find_dim
+from cefi_mcp.utils import find_dim, format_float
 
 
 @pytest.mark.parametrize('dim_name', ['lon', 'xh', 'longitude', 'x', 'xc', 'xq'])
@@ -160,3 +160,56 @@ def test_find_all_three_dims_mixed_conventions():
     assert x_dim == 'longitude'
     assert y_dim == 'latitude'
     assert z_dim == 'zi'
+
+
+def test_format_float_coordinates():
+    """Test coordinate formatting with 4 sig figs."""
+    assert format_float(-89.123456, 'coordinate') == '-89.12'
+    assert format_float(179.987654, 'coordinate') == '180'
+    assert format_float(0.123456, 'coordinate') == '0.1235'
+    assert format_float(45.1, 'coordinate') == '45.1'
+
+
+def test_format_float_data_very_small():
+    """Test data value formatting for very small values (chemical concentrations)."""
+    assert format_float(1.23456e-9, 'data') == '1.2346e-09'
+    assert format_float(1.23456e-5, 'data') == '1.2346e-05'
+    assert format_float(0.0000123456, 'data') == '1.2346e-05'
+
+
+def test_format_float_data_moderate():
+    """Test data value formatting for moderate values (temperature, salinity)."""
+    assert format_float(35.123456, 'data') == '35.123'
+    assert format_float(-2.3456789, 'data') == '-2.3457'
+    assert format_float(15.5, 'data') == '15.5'
+
+
+def test_format_float_data_large():
+    """Test data value formatting for large values (depth)."""
+    assert format_float(6543.21, 'data') == '6543.2'
+    assert format_float(1234.5678, 'data') == '1234.6'
+
+
+def test_format_float_data_very_large():
+    """Test data value formatting for very large values (order 10^4 and above)."""
+    assert format_float(12345.678, 'data') == '12346'
+    assert format_float(98765.4321, 'data') == '98765'
+    assert format_float(123456.789, 'data') == '1.2346e+05'
+    assert format_float(1e6, 'data') == '1e+06'
+    assert format_float(-54321.12, 'data') == '-54321'
+
+
+def test_format_float_edge_cases():
+    """Test edge case handling."""
+    assert format_float(float('nan'), 'data') == 'NaN'
+    assert format_float(float('inf'), 'data') == 'inf'
+    assert format_float(float('-inf'), 'data') == '-inf'
+    assert format_float(0.0, 'data') == '0'
+    assert format_float(-0.0, 'data') == '0'
+
+
+def test_format_float_very_small_nonzero():
+    """Test that very small values don't round to zero."""
+    result = format_float(1e-15, 'data')
+    assert result == '1e-15'
+    assert result != '0'

@@ -13,7 +13,7 @@ from async_lru import alru_cache
 from loguru import logger
 from pydantic import Field, HttpUrl
 
-from .utils import find_dim, normalize_lon
+from .utils import find_dim, format_float, normalize_lon
 
 Variable = Annotated[
     str,
@@ -208,8 +208,8 @@ async def query_variable_metadata(
                         'name': dim,
                         'size': len(coord_data),
                         'range': [
-                            float(coord_data.min().values),
-                            float(coord_data.max().values),
+                            format_float(float(coord_data.min().values), context='coordinate'),
+                            format_float(float(coord_data.max().values), context='coordinate'),
                         ],
                         'units': coord_data.attrs.get('units', 'N/A'),
                         'long_name': coord_data.attrs.get('long_name', 'N/A'),
@@ -313,8 +313,12 @@ async def get_variable_point(
         mean_ts = []
         std_ts = []
         for time_val in res.time.values:
-            mean_val = float(res.sel(time=time_val).item())
-            std_val = 'Unknown' if std is None else float(std.sel(time=time_val).item())
+            mean_val = format_float(float(res.sel(time=time_val).item()), context='data')
+            std_val = (
+                'Unknown'
+                if std is None
+                else format_float(float(std.sel(time=time_val).item()), context='data')
+            )
             mean_ts.append(
                 {'time': str(pd.Timestamp(time_val).strftime('%Y-%m-%d')), 'value': mean_val}
             )
@@ -365,7 +369,7 @@ async def get_variable_point(
         return {
             'Variable name': ds[variable].attrs.get('long_name', 'Unknown'),
             'Data type': 'Single point',
-            'Data value': float(res),
+            'Data value': format_float(float(res), context='data'),
             'Data units': ds[variable].attrs.get('units', 'unknown'),
             'Time requested': time_point,
         }
@@ -449,7 +453,7 @@ async def get_variable_climatology_point(
         }
     return {
         'Variable name': res.attrs.get('long_name', 'Unknown'),
-        f'Average for {calendar.month_name[month]}': float(res),
+        f'Average for {calendar.month_name[month]}': format_float(float(res), context='data'),
         'Data units': res.attrs.get('units', 'unknown'),
     }
 
@@ -510,6 +514,18 @@ async def geocode_ocean_place(
                 }
                 # Only include non-null values
                 result = {k: v for k, v in result.items() if v is not None}
+                # Format coordinate values to reduce token usage
+                coord_keys = {
+                    'Latitude',
+                    'Longitude',
+                    'Minimum latitude',
+                    'Maximum latitude',
+                    'Minimum longitude',
+                    'Maximum longitude',
+                }
+                for key in coord_keys:
+                    if key in result:
+                        result[key] = format_float(float(result[key]), context='coordinate')
                 results.append(result)
 
             return {
