@@ -37,52 +37,64 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Build Python package wheel
-        run: |
-          uv build --wheel
-
-      - name: Extract wheel version
+      - name: Extract version from pyproject.toml
         id: version
         run: |
-          wheel_file=$(ls dist/*.whl | head -1)
-          wheel_name=$(basename "$wheel_file")
-          echo "wheel_file=$wheel_file" >> $GITHUB_OUTPUT
-          echo "wheel_name=$wheel_name" >> $GITHUB_OUTPUT
-          # Extract version from pyproject.toml
           version=$(grep '^version = ' pyproject.toml | sed 's/version = "//' | sed 's/"//')
           echo "version=$version" >> $GITHUB_OUTPUT
 
-      - name: Create bundle directory
+      - name: Create bundle directory with source code
         run: |
           mkdir -p mcpb-bundle
-          cd mcpb-bundle
 
-          # Copy the wheel file
-          cp ../${{ steps.version.outputs.wheel_file }} ./
+          # Copy source code directly
+          cp -r src mcpb-bundle/
 
-          # Create manifest.json
-          cat > manifest.json << 'EOF'
+          # Copy files needed for uv to install dependencies
+          cp pyproject.toml mcpb-bundle/
+          cp uv.lock mcpb-bundle/
+
+          # Copy metadata files
+          cp README.md mcpb-bundle/ || true
+          cp LICENSE mcpb-bundle/ || true
+
+      - name: Create manifest.json
+        run: |
+          cat > mcpb-bundle/manifest.json << EOF
           {
-            "manifest_version": "1",
+            "manifest_version": "0.3",
             "name": "cefi-mcp",
             "display_name": "CEFI MCP Server",
             "version": "${{ steps.version.outputs.version }}",
             "description": "MCP server for Changing Ecosystems and Fisheries model data",
+            "long_description": "Access CEFI model data for ocean ecosystems and fisheries forecasting through the Model Context Protocol",
             "author": {
               "name": "CEFI"
             },
             "server": {
-              "type": "stdio",
-              "command": "uvx",
-              "args": ["--from", "cefi-mcp", "cefi-mcp"]
+              "type": "python",
+              "entry_point": "src/cefi_mcp/__main__.py",
+              "mcp_config": {
+                "command": "uv",
+                "args": ["run", "--directory", "\${__dirname}", "cefi-mcp"],
+                "env": {}
+              }
+            },
+            "compatibility": {
+              "platforms": ["darwin", "linux", "win32"],
+              "runtimes": {
+                "python": ">=3.14"
+              }
             }
           }
           EOF
+          # Remove leading whitespace from JSON
+          sed -i 's/^          //' mcpb-bundle/manifest.json
 
       - name: Create MCPB bundle
         run: |
           cd mcpb-bundle
-          mcpb pack --manifest manifest.json --output cefi-mcp-${{ steps.version.outputs.version }}.mcpb
+          mcpb pack . cefi-mcp-${{ steps.version.outputs.version }}.mcpb
 
       - name: List bundle contents
         run: |
