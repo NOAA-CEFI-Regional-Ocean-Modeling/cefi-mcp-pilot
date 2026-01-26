@@ -5,6 +5,7 @@ import pytest
 import xarray as xr
 
 from cefi_mcp.tools import (
+    _analyze_temporal_info,
     _cached_open_dataset,
     open_dataset,
     query_variable_metadata,
@@ -175,3 +176,163 @@ async def test_open_dataset_invalid_file_format(mock_xr_open):
 
     with pytest.raises(ValueError, match='Not a valid NetCDF file'):
         await open_dataset('http://psl.noaa.gov/thredds/dodsC/Projects/CEFI/test.nc')
+
+
+# Tests for _analyze_temporal_info helper function
+
+
+@pytest.fixture
+def daily_dataset():
+    """Create a dataset with daily frequency"""
+    time = np.arange(
+        np.datetime64('2023-01-01'), np.datetime64('2023-01-11'), dtype='datetime64[D]'
+    )
+    lat = np.linspace(-90, 90, 10)
+    lon = np.linspace(-180, 180, 10)
+
+    temp_data = 15 + 10 * np.random.random((10, 10, 10))
+
+    ds = xr.Dataset(
+        {
+            'temperature': (
+                ('time', 'lat', 'lon'),
+                temp_data,
+                {'units': 'degrees_C', 'long_name': 'Temperature'},
+            ),
+        },
+        coords={
+            'time': ('time', time, {'units': 'days since 1900-01-01'}),
+            'lat': ('lat', lat),
+            'lon': ('lon', lon),
+        },
+    )
+    return ds
+
+
+@pytest.fixture
+def monthly_dataset():
+    """Create a dataset with monthly frequency"""
+    time = np.arange(
+        np.datetime64('2023-01-01'), np.datetime64('2023-12-01'), dtype='datetime64[M]'
+    )
+    lat = np.linspace(-90, 90, 10)
+    lon = np.linspace(-180, 180, 10)
+
+    temp_data = 15 + 10 * np.random.random((len(time), 10, 10))
+
+    ds = xr.Dataset(
+        {
+            'temperature': (
+                ('time', 'lat', 'lon'),
+                temp_data,
+                {'units': 'degrees_C', 'long_name': 'Temperature'},
+            ),
+        },
+        coords={
+            'time': ('time', time, {'units': 'days since 1900-01-01'}),
+            'lat': ('lat', lat),
+            'lon': ('lon', lon),
+        },
+    )
+    return ds
+
+
+@pytest.fixture
+def no_time_dimension_dataset():
+    """Create a dataset without time dimension"""
+    lat = np.linspace(-90, 90, 10)
+    lon = np.linspace(-180, 180, 10)
+
+    temp_data = 15 + 10 * np.random.random((10, 10))
+
+    ds = xr.Dataset(
+        {
+            'temperature': (
+                ('lat', 'lon'),
+                temp_data,
+                {'units': 'degrees_C', 'long_name': 'Temperature'},
+            ),
+        },
+        coords={
+            'lat': ('lat', lat),
+            'lon': ('lon', lon),
+        },
+    )
+    return ds
+
+
+@pytest.fixture
+def single_timestep_dataset():
+    """Create a dataset with single timestep"""
+    time = np.array([np.datetime64('2023-01-01')])
+    lat = np.linspace(-90, 90, 10)
+    lon = np.linspace(-180, 180, 10)
+
+    temp_data = 15 + 10 * np.random.random((1, 10, 10))
+
+    ds = xr.Dataset(
+        {
+            'temperature': (
+                ('time', 'lat', 'lon'),
+                temp_data,
+                {'units': 'degrees_C', 'long_name': 'Temperature'},
+            ),
+        },
+        coords={
+            'time': ('time', time),
+            'lat': ('lat', lat),
+            'lon': ('lon', lon),
+        },
+    )
+    return ds
+
+
+def test_analyze_temporal_info_daily(daily_dataset):
+    """Test temporal analysis with daily frequency"""
+    result = _analyze_temporal_info(daily_dataset, 'temperature')
+
+    assert result is not None
+    assert result['frequency'] == 'Daily'
+    assert '2023-01-01' in result['start']
+    assert '2023-01-10' in result['end']
+    assert result['count'] == 10
+    assert len(result['sample_dates']) == 5  # Should sample 5 dates when > 5 timesteps
+
+
+def test_analyze_temporal_info_monthly(monthly_dataset):
+    """Test temporal analysis with monthly frequency"""
+    result = _analyze_temporal_info(monthly_dataset, 'temperature')
+
+    assert result is not None
+    assert 'Monthly' in result['frequency']  # Could be 'Monthly', 'Monthly (start)', etc.
+    assert '2023-01' in result['start']
+    assert '2023-11' in result['end']
+    assert result['count'] == 11
+    assert len(result['sample_dates']) == 5  # Should sample 5 dates when > 5 timesteps
+
+
+def test_analyze_temporal_info_sample_dates_downsampling(monthly_dataset):
+    """Test that sample dates are properly downsampled when > 5 timesteps"""
+    result = _analyze_temporal_info(monthly_dataset, 'temperature')
+
+    assert len(result['sample_dates']) == 5
+    # First and last samples should be the start and end
+    assert '2023-01' in result['sample_dates'][0]
+    assert '2023-11' in result['sample_dates'][-1]
+
+
+def test_analyze_temporal_info_no_time_dimension(no_time_dimension_dataset):
+    """Test that None is returned when variable has no time dimension"""
+    result = _analyze_temporal_info(no_time_dimension_dataset, 'temperature')
+
+    assert result is None
+
+
+def test_analyze_temporal_info_single_timestep(single_timestep_dataset):
+    """Test temporal analysis with single timestep"""
+    result = _analyze_temporal_info(single_timestep_dataset, 'temperature')
+
+    assert result is not None
+    assert result['count'] == 1
+    assert len(result['sample_dates']) == 1
+    assert '2023-01-01' in result['sample_dates'][0]

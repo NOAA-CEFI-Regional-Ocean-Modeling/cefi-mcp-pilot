@@ -154,6 +154,54 @@ def _add_forecast_time(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def _analyze_temporal_info(ds: xr.Dataset, variable: str) -> dict | None:
+    """
+    Analyze temporal properties of a variable.
+
+    Returns a dict with temporal info if time dimension exists, None otherwise.
+    """
+    var_data = ds[variable]
+    if 'time' not in var_data.dims or 'time' not in ds.coords:
+        return None
+
+    time_coord = ds.coords['time']
+    times = pd.to_datetime(time_coord.values)
+
+    # Detect frequency from the data
+    freq = None
+    if len(times) > 1:
+        freq = pd.infer_freq(times)
+
+    # Map pandas frequency codes to human-readable descriptions
+    freq_map = {
+        'D': 'Daily',
+        'MS': 'Monthly (start)',
+        'ME': 'Monthly (end)',
+        'M': 'Monthly',
+        'AS': 'Annual (start)',
+        'A': 'Annual',
+        'YS': 'Annual (start)',
+        'QS': 'Quarterly (start)',
+    }
+    freq_desc = freq_map.get(str(freq), str(freq) if freq else 'Unknown')
+
+    # Get sample times
+    num_times = len(times)
+    if num_times <= 5:
+        sample_times = [str(t) for t in times]
+    else:
+        indices = np.linspace(0, num_times - 1, 5, dtype=int)
+        sample_times = [str(times[i]) for i in indices]
+
+    return {
+        'frequency': freq_desc,
+        'start': str(times[0]),
+        'end': str(times[-1]),
+        'count': num_times,
+        'sample_dates': sample_times,
+    }
+
+
 async def query_variable_metadata(
     cefi_opendap_url: Annotated[
         HttpUrl,
@@ -187,6 +235,7 @@ async def query_variable_metadata(
 
         # Time information if time dimension exists
         if 'time' in var_data.dims and 'time' in ds.coords:
+            temporal_data = _analyze_temporal_info(ds, variable)
             time_coord = ds.coords['time']
             metadata['temporal_info'] = {
                 'time_span': {
@@ -196,7 +245,13 @@ async def query_variable_metadata(
                 },
                 'time_units': time_coord.attrs.get('units', 'N/A'),
                 'calendar': time_coord.attrs.get('calendar', 'N/A'),
+                'frequency': temporal_data['frequency'] if temporal_data else 'Unknown',
+                'sample_dates': temporal_data['sample_dates'] if temporal_data else [],
             }
+            metadata['temporal_usage_note'] = (
+                'For monthly data, use day=0 in get_variable_point. '
+                'Only specify day for daily data. Never request invalid dates like June 31st.'
+            )
 
         # Spatial information
         spatial_dims = []
