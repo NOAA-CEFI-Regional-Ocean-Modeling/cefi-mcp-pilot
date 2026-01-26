@@ -1,0 +1,116 @@
+name: Build MCPB Bundle
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-mcpb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install Node.js (for mcpb tool)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install mcpb CLI tool
+        run: npm install -g @anthropic-ai/mcpb
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build Python package wheel
+        run: |
+          uv build --wheel
+
+      - name: Extract wheel version
+        id: version
+        run: |
+          wheel_file=$(ls dist/*.whl | head -1)
+          wheel_name=$(basename "$wheel_file")
+          echo "wheel_file=$wheel_file" >> $GITHUB_OUTPUT
+          echo "wheel_name=$wheel_name" >> $GITHUB_OUTPUT
+          # Extract version from pyproject.toml
+          version=$(grep '^version = ' pyproject.toml | sed 's/version = "//' | sed 's/"//')
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Create bundle directory
+        run: |
+          mkdir -p mcpb-bundle
+          cd mcpb-bundle
+
+          # Copy the wheel file
+          cp ../${{ steps.version.outputs.wheel_file }} ./
+
+          # Create manifest.json
+          cat > manifest.json << 'EOF'
+          {
+            "manifest_version": "1",
+            "name": "cefi-mcp",
+            "display_name": "CEFI MCP Server",
+            "version": "${{ steps.version.outputs.version }}",
+            "description": "MCP server for Changing Ecosystems and Fisheries model data",
+            "author": {
+              "name": "CEFI"
+            },
+            "server": {
+              "type": "stdio",
+              "command": "uvx",
+              "args": ["--from", "cefi-mcp", "cefi-mcp"]
+            }
+          }
+          EOF
+
+      - name: Create MCPB bundle
+        run: |
+          cd mcpb-bundle
+          mcpb pack --manifest manifest.json --output cefi-mcp-${{ steps.version.outputs.version }}.mcpb
+
+      - name: List bundle contents
+        run: |
+          cd mcpb-bundle
+          ls -lah cefi-mcp-${{ steps.version.outputs.version }}.mcpb
+          unzip -l cefi-mcp-${{ steps.version.outputs.version }}.mcpb
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=${{ steps.version.outputs.version }}
+
+          # Check if release exists
+          if gh release view "v${version}" 2>/dev/null; then
+            # Delete existing release
+            gh release delete "v${version}" -y
+          fi
+
+          # Create new release
+          gh release create "v${version}" \
+            "mcpb-bundle/cefi-mcp-${version}.mcpb" \
+            --title "CEFI MCP Server v${version}" \
+            --notes "MCPB bundle for Claude Desktop installation" \
+            --target main
+
+      - name: Upload MCPB as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cefi-mcp-bundle
+          path: mcpb-bundle/cefi-mcp-${{ steps.version.outputs.version }}.mcpb
