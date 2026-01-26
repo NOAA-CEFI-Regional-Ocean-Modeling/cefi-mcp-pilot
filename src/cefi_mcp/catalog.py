@@ -1,6 +1,7 @@
 """Pydantic models for CEFI NetCDF metadata"""
 
 import asyncio
+import calendar
 import json
 from datetime import datetime
 from pathlib import Path
@@ -122,7 +123,12 @@ class CEFIDatasetMetadata(BaseModel):
         if self.cefi_date_range == 'N/A':
             return 'N/A'
         else:
-            return datetime.strptime(self.cefi_date_range[7:13] + '31', '%Y%m%d')
+            year_month = self.cefi_date_range[7:13]
+            year = int(year_month[0:4])
+            month = int(year_month[4:6])
+            # Use the actual number of days in the month
+            max_day = calendar.monthrange(year, month)[1]
+            return datetime.strptime(year_month + f'{max_day:02d}', '%Y%m%d')
 
     @computed_field
     @property

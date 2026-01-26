@@ -129,25 +129,25 @@ async def test_load_nonexistent_file():
 @pytest.mark.asyncio
 async def test_load_catalog_file_path_traversal():
     """Test that path traversal attempts are blocked"""
-    with pytest.raises(ValueError, match='Access denied.*forbidden'):
+    with pytest.raises(ValueError, match=r'Access denied.*forbidden'):
         await load_catalog_file('../../../etc/passwd')
 
-    with pytest.raises(ValueError, match='Access denied.*forbidden'):
+    with pytest.raises(ValueError, match=r'Access denied.*forbidden'):
         await load_catalog_file('/etc/passwd')
 
 
 @pytest.mark.asyncio
 async def test_load_catalog_file_forbidden_patterns():
     """Test that paths with forbidden patterns are blocked"""
-    with pytest.raises(ValueError, match='Access denied.*forbidden'):
+    with pytest.raises(ValueError, match=r'Access denied.*forbidden'):
         await load_catalog_file('../config.json')
 
-    with pytest.raises(ValueError, match='Access denied.*forbidden'):
+    with pytest.raises(ValueError, match=r'Access denied.*forbidden'):
         await load_catalog_file('/home/user/file.json')
 
 
 @pytest.mark.asyncio
 async def test_load_catalog_file_outside_project_directory():
     """Test that files outside project directory are blocked"""
-    with pytest.raises(ValueError, match='Access denied.*forbidden'):
+    with pytest.raises(ValueError, match=r'Access denied.*forbidden'):
         await load_catalog_file('/tmp/malicious.json')

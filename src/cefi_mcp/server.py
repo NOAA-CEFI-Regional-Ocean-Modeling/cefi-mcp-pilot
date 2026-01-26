@@ -11,7 +11,7 @@ from starlette.responses import PlainTextResponse
 from . import catalog, tools
 
 
-async def create_server() -> FastMCP:
+async def create_server(use_geocode: bool = False) -> FastMCP:
     """Create and configure the MCP server and register tools"""
     mcp = FastMCP('Server for Changing Ecosystems and Fisheries Data')
 
@@ -25,7 +25,8 @@ async def create_server() -> FastMCP:
     mcp.tool()(tools.query_variable_metadata)
     mcp.tool()(tools.get_variable_point)
     mcp.tool()(tools.get_variable_climatology_point)
-    mcp.tool()(tools.geocode_ocean_place)
+    if use_geocode:
+        mcp.tool()(tools.geocode_ocean_place)
 
     # Add health check endpoint, mainly for Docker purposes
     @mcp.custom_route('/health', methods=['GET'])
@@ -35,13 +36,13 @@ async def create_server() -> FastMCP:
     return mcp
 
 
-async def async_main(transport: str, host: str, port: int):
+async def async_main(transport: str, host: str, port: int, use_geocode: bool = False):
     # Disable logging for stdio transport to avoid interfering with MCP protocol
     if transport == 'stdio':
         logger.remove()
         logger.add(lambda _: None)
 
-    server = await create_server()
+    server = await create_server(use_geocode=use_geocode)
     logger.info('Server created')
     if transport == 'stdio':
         await server.run_async(transport='stdio')
@@ -70,6 +71,9 @@ def main():
         default=8000,
         help='Port to bind to for http/sse transport (default: 8000)',
     )
+    parser.add_argument(
+        '--use_geocode', action='store_true', help='Enable the geocoding tool'
+    )
 
     args = parser.parse_args()
 
@@ -79,4 +83,4 @@ def main():
         raise ValueError(f"Host '{args.host}' not allowed. Use one of: {allowed_hosts}")
 
     # A separate sync main function is needed because it is the entry point
-    asyncio.run(async_main(args.transport, args.host, args.port))
+    asyncio.run(async_main(args.transport, args.host, args.port, use_geocode=args.use_geocode))

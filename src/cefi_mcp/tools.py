@@ -2,6 +2,7 @@
 
 import asyncio
 import calendar
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import quote, urlparse
 
@@ -154,6 +155,79 @@ def _add_forecast_time(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def _validate_date(year: int, month: int, day: int) -> None:
+    """
+    Validate that the date is actually valid (e.g., reject June 31).
+
+    Raises ValueError with a helpful message if the date is invalid.
+    """
+    if day == 0:
+        # Day 0 is used to indicate monthly data; validate year and month only
+        try:
+            datetime(year, month, 1)
+        except ValueError as e:
+            raise ValueError(f'Invalid year/month: {year}-{month:02d}. {e}') from e
+    else:
+        # Validate the full date
+        try:
+            datetime(year, month, day)
+        except ValueError as e:
+            # Provide helpful suggestion for invalid day
+            max_day = calendar.monthrange(year, month)[1]
+            raise ValueError(
+                f'Invalid date: {year}-{month:02d}-{day:02d}. {e} '
+                f'The month {calendar.month_name[month]} has {max_day} days.'
+            ) from e
+
+
+def _analyze_temporal_info(ds: xr.Dataset, variable: str) -> dict | None:
+    """
+    Analyze temporal properties of a variable.
+
+    Returns a dict with temporal info if time dimension exists, None otherwise.
+    """
+    var_data = ds[variable]
+    if 'time' not in var_data.dims or 'time' not in ds.coords:
+        return None
+
+    time_coord = ds.coords['time']
+    times = pd.to_datetime(time_coord.values)
+
+    # Detect frequency from the data
+    freq = None
+    if len(times) > 1:
+        freq = pd.infer_freq(times)
+
+    # Map pandas frequency codes to human-readable descriptions
+    freq_map = {
+        'D': 'Daily',
+        'MS': 'Monthly (start)',
+        'ME': 'Monthly (end)',
+        'M': 'Monthly',
+        'AS': 'Annual (start)',
+        'A': 'Annual',
+        'YS': 'Annual (start)',
+        'QS': 'Quarterly (start)',
+    }
+    freq_desc = freq_map.get(str(freq), str(freq) if freq else 'Unknown')
+
+    # Get sample times
+    num_times = len(times)
+    if num_times <= 5:
+        sample_times = [str(t) for t in times]
+    else:
+        indices = np.linspace(0, num_times - 1, 5, dtype=int)
+        sample_times = [str(times[i]) for i in indices]
+
+    return {
+        'frequency': freq_desc,
+        'start': str(times[0]),
+        'end': str(times[-1]),
+        'count': num_times,
+        'sample_dates': sample_times,
+    }
+
+
 async def query_variable_metadata(
     cefi_opendap_url: Annotated[
         HttpUrl,
@@ -187,6 +261,7 @@ async def query_variable_metadata(
 
         # Time information if time dimension exists
         if 'time' in var_data.dims and 'time' in ds.coords:
+            temporal_data = _analyze_temporal_info(ds, variable)
             time_coord = ds.coords['time']
             metadata['temporal_info'] = {
                 'time_span': {
@@ -196,7 +271,13 @@ async def query_variable_metadata(
                 },
                 'time_units': time_coord.attrs.get('units', 'N/A'),
                 'calendar': time_coord.attrs.get('calendar', 'N/A'),
+                'frequency': temporal_data['frequency'] if temporal_data else 'Unknown',
+                'sample_dates': temporal_data['sample_dates'] if temporal_data else [],
             }
+            metadata['temporal_usage_note'] = (
+                'For monthly data, use day=0 in get_variable_point. '
+                'Only specify day for daily data. Never request invalid dates like June 31st.'
+            )
 
         # Spatial information
         spatial_dims = []
@@ -237,13 +318,30 @@ async def get_variable_point(
         float,
         Field(description='Longitude of the point to get in degrees east, ranging from 0 to 360'),
     ],
-    year: Annotated[int, Field(description='Year of the single date', ge=1900, le=2100)],
-    month: Annotated[int, Field(description='Month of the single date', ge=1, le=12)],
+    year: Annotated[
+        int,
+        Field(
+            description='Year of the requested date (1900-2100). '
+            'Call query_variable_metadata first to check available years.',
+            ge=1900,
+            le=2100,
+        ),
+    ],
+    month: Annotated[
+        int,
+        Field(
+            description='Month (1-12) of the requested date. '
+            'Call query_variable_metadata to determine if data is daily or monthly.',
+            ge=1,
+            le=12,
+        ),
+    ],
     day: Annotated[
         int,
         Field(
-            description='Integer day of the month of the single date. '
-            'Only needed if daily data is being read.',
+            description='Day of month (1-31) for daily data. Set to 0 for monthly data. '
+            'Invalid dates like June 31st will be rejected with a helpful error. '
+            'Call query_variable_metadata to check if dataset is daily or monthly.',
             default=0,  # keep default an int so client will know to use ints
             ge=1,
             le=31,
@@ -252,9 +350,9 @@ async def get_variable_point(
     depth: Annotated[
         float,
         Field(
-            description='Depth of the point to get in meters,'
-            'with positive values deeper in the ocean. Do not use if'
-            '"surface" or "bottom" data are requested.',
+            description='Depth in meters (0-6500), with positive values deeper in the ocean. '
+            'Use -1 (default) or omit for surface data. '
+            'Call query_variable_metadata to check available depth levels.',
             ge=0,
             le=6500,
             default=-1.0,  # keep default a float so client will know to use floats
@@ -262,10 +360,17 @@ async def get_variable_point(
     ],
 ) -> dict:
     """
-    Get data for a single variable at a single point in lat and lon.
-    For hindcast datasets: returns a single value at the specified time.
+    Get data for a single variable at a single point in lat/lon and time.
+
+    For hindcast datasets: returns a single value at the specified date.
     For forecast datasets: returns the complete forecast time series (typically 12 months).
-    Use the get_variable_climatology_point tool instead if the long-term average is desired.
+
+    RECOMMENDED WORKFLOW:
+    1. Call query_variable_metadata first to understand temporal/spatial structure
+    2. This will show you: data frequency (daily/monthly), available date range, and valid depths
+    3. Then call this tool with valid parameters
+
+    Use get_variable_climatology_point instead to get long-term averages for a calendar month.
     """
     try:
         ds = await open_dataset(str(cefi_opendap_url), 30)
@@ -276,6 +381,7 @@ async def get_variable_point(
     # TODO: should be sure that the data are reduced to a single value.
 
     try:
+        _validate_date(year, month, day)
         coord_slice = _setup_coord_slice(ds, variable, latitude, longitude, depth)
         ds = _add_forecast_time(ds)
     except ValueError as e:
@@ -389,13 +495,21 @@ async def get_variable_climatology_point(
             le=360,
         ),
     ],
-    month: Annotated[int, Field(description='Month to find typical value for', ge=1, le=12)],
+    month: Annotated[
+        int,
+        Field(
+            description='Calendar month (1-12) for which to calculate long-term average. '
+            'The climatology averages all years of data for this month.',
+            ge=1,
+            le=12,
+        ),
+    ],
     depth: Annotated[
         float,
         Field(
-            description='Depth of the point to get in meters,'
-            'with positive values deeper in the ocean. Do not use if'
-            '"surface" or "bottom" data are requested.',
+            description='Depth in meters (0-6500), with positive values deeper in the ocean. '
+            'Use -1 (default) or omit for surface data. '
+            'Call query_variable_metadata to check available depth levels.',
             ge=0,
             le=6500,
             default=-1.0,  # keep default a float so client will know to use floats
@@ -403,8 +517,15 @@ async def get_variable_climatology_point(
     ],
 ) -> dict:
     """
-    Get the long-term average (also known as the climatology, or the typical value or conditions)
-    over a given calendar month for a single variable, at a single point in lat and lon.
+    Get the long-term average (climatology) for a specific calendar month.
+
+    Returns the typical value/conditions averaged over all available years for a given
+    calendar month at a single point in lat/lon and depth.
+
+    RECOMMENDED WORKFLOW:
+    1. Call query_variable_metadata first to understand available depths
+    2. Use this tool to get typical conditions for any calendar month (1-12)
+    3. Compare with get_variable_point to see how current conditions differ from normal
     """
     try:
         ds = await open_dataset(str(cefi_opendap_url), 30)
