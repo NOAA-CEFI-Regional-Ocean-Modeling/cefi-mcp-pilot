@@ -28,7 +28,7 @@ Then, connect the client to `http://localhost:8000/mcp`
 
 # Tips
 
-The "Geocode ocean place" tool is helpful for getting the coordinates of less commonly known locations. However, for common locations, it can return a number of similar but different coordinates. If the model is having trouble finding the right coordinates using this tool, it may be better to disable it and rely on the model's knowledge about places and coordinates. This tool needs additional development work to enable it to identify the best coordinates to return.
+The "Geocode ocean place" tool is helpful for getting the coordinates of less commonly known locations. It can be enabled by including the `--use_geocode` flag in the command used to launch the server. However, for common locations, it can return a number of similar but different coordinates. This tool needs additional development work to enable it to identify the best coordinates to return.
 
 # Disclaimers
 
