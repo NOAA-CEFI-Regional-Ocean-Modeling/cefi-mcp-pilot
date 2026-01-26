@@ -1,0 +1,56 @@
+# Development and version control
+.git/
+.github/
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.dist-info/
+.eggs/
+
+# Build artifacts
+dist/
+build/
+*.whl
+*.egg
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Code quality tools
+.ruff_cache/
+.ropeproject/
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.log
+*.map
+
+# Cache files
+.cache/
+node_modules/.cache/

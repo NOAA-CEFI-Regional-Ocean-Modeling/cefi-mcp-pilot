@@ -63,18 +63,28 @@ jobs:
           # Create manifest.json
           cat > manifest.json << 'EOF'
           {
-            "manifest_version": "1",
+            "manifest_version": "0.3",
             "name": "cefi-mcp",
             "display_name": "CEFI MCP Server",
             "version": "${{ steps.version.outputs.version }}",
             "description": "MCP server for Changing Ecosystems and Fisheries model data",
+            "long_description": "Access CEFI model data for ocean ecosystems and fisheries forecasting through the Model Context Protocol",
             "author": {
               "name": "CEFI"
             },
             "server": {
-              "type": "stdio",
-              "command": "uvx",
-              "args": ["--from", "cefi-mcp", "cefi-mcp"]
+              "type": "python",
+              "entry_point": "cefi_mcp",
+              "mcp_config": {
+                "command": "python",
+                "args": ["-m", "cefi_mcp"]
+              }
+            },
+            "compatibility": {
+              "platforms": ["darwin", "linux", "win32"],
+              "runtimes": {
+                "python": ">=3.14"
+              }
             }
           }
           EOF
@@ -82,7 +92,7 @@ jobs:
       - name: Create MCPB bundle
         run: |
           cd mcpb-bundle
-          mcpb pack --manifest manifest.json --output cefi-mcp-${{ steps.version.outputs.version }}.mcpb
+          mcpb pack . cefi-mcp-${{ steps.version.outputs.version }}.mcpb
 
       - name: List bundle contents
         run: |
