@@ -274,10 +274,6 @@ async def query_variable_metadata(
                 'frequency': temporal_data['frequency'] if temporal_data else 'Unknown',
                 'sample_dates': temporal_data['sample_dates'] if temporal_data else [],
             }
-            metadata['temporal_usage_note'] = (
-                'For monthly data, use day=0 in get_variable_point. '
-                'Only specify day for daily data. Never request invalid dates like June 31st.'
-            )
 
         # Spatial information
         spatial_dims = []
