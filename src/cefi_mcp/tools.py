@@ -318,13 +318,30 @@ async def get_variable_point(
         float,
         Field(description='Longitude of the point to get in degrees east, ranging from 0 to 360'),
     ],
-    year: Annotated[int, Field(description='Year of the single date', ge=1900, le=2100)],
-    month: Annotated[int, Field(description='Month of the single date', ge=1, le=12)],
+    year: Annotated[
+        int,
+        Field(
+            description='Year of the requested date (1900-2100). '
+            'Call query_variable_metadata first to check available years.',
+            ge=1900,
+            le=2100,
+        ),
+    ],
+    month: Annotated[
+        int,
+        Field(
+            description='Month (1-12) of the requested date. '
+            'Call query_variable_metadata to determine if data is daily or monthly.',
+            ge=1,
+            le=12,
+        ),
+    ],
     day: Annotated[
         int,
         Field(
-            description='Integer day of the month of the single date. '
-            'Only needed if daily data is being read.',
+            description='Day of month (1-31) for daily data. Set to 0 for monthly data. '
+            'Invalid dates like June 31st will be rejected with a helpful error. '
+            'Call query_variable_metadata to check if dataset is daily or monthly.',
             default=0,  # keep default an int so client will know to use ints
             ge=1,
             le=31,
@@ -333,9 +350,9 @@ async def get_variable_point(
     depth: Annotated[
         float,
         Field(
-            description='Depth of the point to get in meters,'
-            'with positive values deeper in the ocean. Do not use if'
-            '"surface" or "bottom" data are requested.',
+            description='Depth in meters (0-6500), with positive values deeper in the ocean. '
+            'Use -1 (default) or omit for surface data. '
+            'Call query_variable_metadata to check available depth levels.',
             ge=0,
             le=6500,
             default=-1.0,  # keep default a float so client will know to use floats
@@ -343,10 +360,17 @@ async def get_variable_point(
     ],
 ) -> dict:
     """
-    Get data for a single variable at a single point in lat and lon.
-    For hindcast datasets: returns a single value at the specified time.
+    Get data for a single variable at a single point in lat/lon and time.
+
+    For hindcast datasets: returns a single value at the specified date.
     For forecast datasets: returns the complete forecast time series (typically 12 months).
-    Use the get_variable_climatology_point tool instead if the long-term average is desired.
+
+    RECOMMENDED WORKFLOW:
+    1. Call query_variable_metadata first to understand temporal/spatial structure
+    2. This will show you: data frequency (daily/monthly), available date range, and valid depths
+    3. Then call this tool with valid parameters
+
+    Use get_variable_climatology_point instead to get long-term averages for a calendar month.
     """
     try:
         ds = await open_dataset(str(cefi_opendap_url), 30)
@@ -471,13 +495,21 @@ async def get_variable_climatology_point(
             le=360,
         ),
     ],
-    month: Annotated[int, Field(description='Month to find typical value for', ge=1, le=12)],
+    month: Annotated[
+        int,
+        Field(
+            description='Calendar month (1-12) for which to calculate long-term average. '
+            'The climatology averages all years of data for this month.',
+            ge=1,
+            le=12,
+        ),
+    ],
     depth: Annotated[
         float,
         Field(
-            description='Depth of the point to get in meters,'
-            'with positive values deeper in the ocean. Do not use if'
-            '"surface" or "bottom" data are requested.',
+            description='Depth in meters (0-6500), with positive values deeper in the ocean. '
+            'Use -1 (default) or omit for surface data. '
+            'Call query_variable_metadata to check available depth levels.',
             ge=0,
             le=6500,
             default=-1.0,  # keep default a float so client will know to use floats
@@ -485,8 +517,15 @@ async def get_variable_climatology_point(
     ],
 ) -> dict:
     """
-    Get the long-term average (also known as the climatology, or the typical value or conditions)
-    over a given calendar month for a single variable, at a single point in lat and lon.
+    Get the long-term average (climatology) for a specific calendar month.
+
+    Returns the typical value/conditions averaged over all available years for a given
+    calendar month at a single point in lat/lon and depth.
+
+    RECOMMENDED WORKFLOW:
+    1. Call query_variable_metadata first to understand available depths
+    2. Use this tool to get typical conditions for any calendar month (1-12)
+    3. Compare with get_variable_point to see how current conditions differ from normal
     """
     try:
         ds = await open_dataset(str(cefi_opendap_url), 30)
