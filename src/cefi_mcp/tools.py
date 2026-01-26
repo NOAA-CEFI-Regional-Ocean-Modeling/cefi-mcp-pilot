@@ -2,6 +2,7 @@
 
 import asyncio
 import calendar
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import quote, urlparse
 
@@ -152,6 +153,31 @@ def _add_forecast_time(ds: xr.Dataset) -> xr.Dataset:
         ds['time'] = (('lead',), valid_time)
         ds = ds.swap_dims({'lead': 'time'})
     return ds
+
+
+def _validate_date(year: int, month: int, day: int) -> None:
+    """
+    Validate that the date is actually valid (e.g., reject June 31).
+
+    Raises ValueError with a helpful message if the date is invalid.
+    """
+    if day == 0:
+        # Day 0 is used to indicate monthly data; validate year and month only
+        try:
+            datetime(year, month, 1)
+        except ValueError as e:
+            raise ValueError(f'Invalid year/month: {year}-{month:02d}. {e}') from e
+    else:
+        # Validate the full date
+        try:
+            datetime(year, month, day)
+        except ValueError as e:
+            # Provide helpful suggestion for invalid day
+            max_day = calendar.monthrange(year, month)[1]
+            raise ValueError(
+                f'Invalid date: {year}-{month:02d}-{day:02d}. {e} '
+                f'The month {calendar.month_name[month]} has {max_day} days.'
+            ) from e
 
 
 def _analyze_temporal_info(ds: xr.Dataset, variable: str) -> dict | None:
@@ -331,6 +357,7 @@ async def get_variable_point(
     # TODO: should be sure that the data are reduced to a single value.
 
     try:
+        _validate_date(year, month, day)
         coord_slice = _setup_coord_slice(ds, variable, latitude, longitude, depth)
         ds = _add_forecast_time(ds)
     except ValueError as e:

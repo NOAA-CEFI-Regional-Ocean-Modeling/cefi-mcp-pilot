@@ -7,6 +7,7 @@ import xarray as xr
 from cefi_mcp.tools import (
     _analyze_temporal_info,
     _cached_open_dataset,
+    _validate_date,
     open_dataset,
     query_variable_metadata,
 )
@@ -176,6 +177,48 @@ async def test_open_dataset_invalid_file_format(mock_xr_open):
 
     with pytest.raises(ValueError, match='Not a valid NetCDF file'):
         await open_dataset('http://psl.noaa.gov/thredds/dodsC/Projects/CEFI/test.nc')
+
+
+# Tests for _validate_date helper function
+
+
+def test_validate_date_valid_full_date():
+    """Test validation of a valid full date"""
+    # Should not raise
+    _validate_date(2023, 1, 15)
+    _validate_date(2023, 12, 31)
+    _validate_date(2020, 2, 29)  # Leap year
+
+
+def test_validate_date_valid_monthly():
+    """Test validation with day=0 (monthly data)"""
+    # Should not raise
+    _validate_date(2023, 1, 0)
+    _validate_date(2023, 12, 0)
+
+
+def test_validate_date_invalid_day_june_31():
+    """Test that June 31st is rejected"""
+    with pytest.raises(ValueError, match=r'Invalid date.*June has 30 days'):
+        _validate_date(2023, 6, 31)
+
+
+def test_validate_date_invalid_day_february_leap_year():
+    """Test that February 30th is invalid even in leap years"""
+    with pytest.raises(ValueError, match=r'Invalid date.*February has 29 days'):
+        _validate_date(2020, 2, 30)
+
+
+def test_validate_date_february_29_non_leap_year():
+    """Test that February 29th is invalid in non-leap years"""
+    with pytest.raises(ValueError, match=r'Invalid date.*February has 28 days'):
+        _validate_date(2023, 2, 29)
+
+
+def test_validate_date_april_31():
+    """Test that April 31st is rejected"""
+    with pytest.raises(ValueError, match=r'Invalid date.*April has 30 days'):
+        _validate_date(2023, 4, 31)
 
 
 # Tests for _analyze_temporal_info helper function
