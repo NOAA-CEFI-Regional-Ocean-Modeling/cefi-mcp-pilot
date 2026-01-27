@@ -4,6 +4,7 @@ import asyncio
 import calendar
 import json
 from datetime import datetime
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -157,12 +158,49 @@ class CEFIDataCatalog(BaseModel):
         """Get the full catalog listing for a specific dataset by the dataset ID"""
         return self.datasets.get(dataset_id)
 
-    def list_variables(self) -> dict[str, str]:
+    def list_variables(self, search_term: str | None = None) -> dict[str, str]:
         """
-        List all unique variables in the CEFI data catalog,
-        including their abbreviation and human-readable name.
+        List variables in the CEFI data catalog, optionally filtered by a search term.
+
+        Args:
+            search_term: Optional search term to filter variables. Uses fuzzy matching
+                on both variable names and descriptions.
+
+        Returns:
+            Dictionary mapping variable abbreviations to human-readable names.
+            If search_term is provided, only returns matching variables.
         """
-        return {dataset.cefi_variable: dataset.cefi_long_name for dataset in self.datasets.values()}
+        all_vars = {
+            dataset.cefi_variable: dataset.cefi_long_name for dataset in self.datasets.values()
+        }
+
+        if search_term is None:
+            return all_vars
+
+        # Normalize search term for case-insensitive matching
+        search_lower = search_term.lower()
+
+        # First pass: exact substring matches in variable name or description
+        exact_matches = {
+            var: desc
+            for var, desc in all_vars.items()
+            if search_lower in var.lower() or search_lower in desc.lower()
+        }
+
+        if exact_matches:
+            return exact_matches
+
+        # Second pass: fuzzy matching on variable names and descriptions
+        all_searchable = list(all_vars.keys()) + list(all_vars.values())
+        fuzzy_matches = get_close_matches(search_term, all_searchable, n=10, cutoff=0.4)
+
+        # Map fuzzy matches back to variable dict
+        result = {}
+        for var, desc in all_vars.items():
+            if var in fuzzy_matches or desc in fuzzy_matches:
+                result[var] = desc
+
+        return result
 
     def filter_by_variable(self, variable: str) -> dict[str, CEFIDatasetMetadata]:
         """Filter datasets by variable name"""
@@ -270,11 +308,37 @@ async def get_dataset_from_catalog(
 async def list_variables(
     region: Region,
     simulation: Simulation,
+    search_term: Annotated[
+        str | None,
+        Field(
+            description='Optional search term to filter variables. Searches variable names and '
+            'descriptions using fuzzy matching. Omit to list all variables (may be very long).',
+            default=None,
+        ),
+    ] = None,
 ) -> dict[str, str]:
-    """List all unique variables in the CEFI data catalog"""
-    logger.info('Listing variables for {region}/{simulation}', region=region, simulation=simulation)
+    """
+    Search for variables in the CEFI data catalog using fuzzy matching.
+
+    This tool searches both variable names (abbreviations) and their descriptions
+    to find relevant variables. Use this before calling other tools to discover
+    what data is available.
+
+    Examples of search terms:
+    - "temperature" - finds SST, bottom temperature, etc.
+    - "productivity" - finds ocean productivity variables
+    - "salinity" - finds salinity variables
+
+    If no search term is provided, returns all variables (which may exceed context window).
+    """
+    logger.info(
+        'Listing variables for {region}/{simulation} with search={search}',
+        region=region,
+        simulation=simulation,
+        search=search_term,
+    )
     cat = await load_catalog_remote(region, simulation)
-    return cat.list_variables()
+    return cat.list_variables(search_term=search_term)
 
 
 async def filter_by_variable(

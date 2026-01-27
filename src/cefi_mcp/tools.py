@@ -362,9 +362,13 @@ async def get_variable_point(
     For forecast datasets: returns the complete forecast time series (typically 12 months).
 
     RECOMMENDED WORKFLOW:
-    1. Call query_variable_metadata first to understand temporal/spatial structure
-    2. This will show you: data frequency (daily/monthly), available date range, and valid depths
-    3. Then call this tool with valid parameters
+    1. Call list_variables to determine what variables are available to help answer the question.
+    2. Call filter_by_variable to determine what datasets are available for the chosen variable.
+        You may find that the same variable is available at different frequencies
+        (monthly and daily, for example).
+        The monthly average is preferred unless you are investigating data on a specific day.
+    3. Call query_variable_metadata if you are uncertain if the data will meet your needs.
+    4. Then call this tool with valid parameters
 
     Use get_variable_climatology_point instead to get long-term averages for a calendar month.
     """

@@ -73,6 +73,57 @@ async def test_list_variables(sample_catalog):
 
 
 @pytest.mark.asyncio
+async def test_list_variables_with_search_exact_match(sample_catalog):
+    """Test listing variables with exact substring match"""
+    # Search for 'ion' should find btm_co3_ion
+    variables = sample_catalog.list_variables(search_term='ion')
+    assert 'btm_co3_ion' in variables
+    assert len(variables) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_variables_with_search_case_insensitive(sample_catalog):
+    """Test that search is case-insensitive"""
+    # Search for 'ION' should find btm_co3_ion
+    variables = sample_catalog.list_variables(search_term='ION')
+    assert 'btm_co3_ion' in variables
+    assert len(variables) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_variables_with_search_in_description(sample_catalog):
+    """Test searching in variable descriptions"""
+    # Search for 'Carbonate' should find variables with 'Carbonate' in description
+    variables = sample_catalog.list_variables(search_term='Carbonate')
+    assert 'btm_co3_ion' in variables
+    assert len(variables) >= 1
+
+
+@pytest.mark.asyncio
+async def test_list_variables_with_search_multiple_matches(sample_catalog):
+    """Test searching returns multiple matches when appropriate"""
+    # Search for 'btm' should find all variables starting with 'btm'
+    variables = sample_catalog.list_variables(search_term='btm')
+    assert len(variables) == 4
+
+
+@pytest.mark.asyncio
+async def test_list_variables_with_search_no_matches(sample_catalog):
+    """Test searching with no matches returns empty dict"""
+    variables = sample_catalog.list_variables(search_term='nonexistent_variable_xyz')
+    assert len(variables) == 0
+    assert isinstance(variables, dict)
+
+
+@pytest.mark.asyncio
+async def test_list_variables_with_search_fuzzy_match(sample_catalog):
+    """Test fuzzy matching finds similar terms"""
+    # Search for 'solubility' should fuzzy match to 'Solubility' in descriptions
+    variables = sample_catalog.list_variables(search_term='solubility')
+    assert len(variables) >= 1
+
+
+@pytest.mark.asyncio
 async def test_filter_by_variable(sample_catalog):
     """Test filtering by variable name"""
     filtered = sample_catalog.filter_by_variable('btm_co3_ion')

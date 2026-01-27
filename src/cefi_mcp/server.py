@@ -71,9 +71,7 @@ def main():
         default=8000,
         help='Port to bind to for http/sse transport (default: 8000)',
     )
-    parser.add_argument(
-        '--use_geocode', action='store_true', help='Enable the geocoding tool'
-    )
+    parser.add_argument('--use_geocode', action='store_true', help='Enable the geocoding tool')
 
     args = parser.parse_args()
 
