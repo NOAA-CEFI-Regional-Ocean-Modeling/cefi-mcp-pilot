@@ -1,3 +1,7 @@
+import json
+import re
+from datetime import UTC
+
 import pytest
 import pytest_asyncio
 
@@ -44,6 +48,91 @@ async def test_computed_fields(sample_catalog_data):
     assert dataset.release_date.year == 2023
     assert dataset.release_date.month == 5
     assert dataset.release_date.day == 20
+
+
+@pytest.mark.asyncio
+async def test_computed_fields_in_json_schema():
+    """Test that computed fields are included in the JSON schema.
+
+    This ensures FastMCP can generate a valid output schema that includes
+    the computed datetime fields. Without this configuration, the serialized
+    data would include fields not defined in the schema, causing validation errors.
+    """
+    schema = CEFIDatasetMetadata.model_json_schema()
+
+    # Verify computed fields are in the schema
+    assert 'start_date' in schema['properties'], 'start_date must be in JSON schema'
+    assert 'end_date' in schema['properties'], 'end_date must be in JSON schema'
+    assert 'release_date' in schema['properties'], 'release_date must be in JSON schema'
+    assert 'init_date' in schema['properties'], 'init_date must be in JSON schema'
+
+    # Verify release_date has the correct format
+    release_schema = schema['properties']['release_date']
+    assert release_schema['type'] == 'string', 'release_date should be string type in schema'
+    assert release_schema['format'] == 'date-time', 'release_date should have date-time format'
+    assert release_schema.get('readOnly') is True, 'computed fields should be readOnly'
+
+
+@pytest.mark.asyncio
+async def test_datetime_fields_are_timezone_aware(sample_catalog_data):
+    """Test that computed datetime fields are timezone-aware and serialize to RFC 3339 format.
+
+    This test ensures datetime fields include UTC timezone information, which is required
+    for RFC 3339 compliant "date-time" format used by JSON Schema validation.
+    Without timezone info, serialization produces timestamps like "2023-05-20T00:00:00"
+    which fail validation. With UTC timezone, they serialize to "2023-05-20T00:00:00Z".
+    """
+    dataset = CEFIDatasetMetadata(**sample_catalog_data['data1'])
+
+    # Test 1: Verify datetime objects have timezone info (are timezone-aware)
+    assert dataset.release_date.tzinfo is not None, 'release_date should be timezone-aware'
+    assert dataset.release_date.tzinfo == UTC, 'release_date should use UTC timezone'
+
+    # start_date and end_date can be str or datetime, so check if datetime
+    if isinstance(dataset.start_date, type(dataset.release_date)):
+        assert dataset.start_date.tzinfo is not None, 'start_date should be timezone-aware'
+        assert dataset.start_date.tzinfo == UTC, 'start_date should use UTC timezone'
+
+    if isinstance(dataset.end_date, type(dataset.release_date)):
+        assert dataset.end_date.tzinfo is not None, 'end_date should be timezone-aware'
+        assert dataset.end_date.tzinfo == UTC, 'end_date should use UTC timezone'
+
+    if isinstance(dataset.init_date, type(dataset.release_date)):
+        assert dataset.init_date.tzinfo is not None, 'init_date should be timezone-aware'
+        assert dataset.init_date.tzinfo == UTC, 'init_date should use UTC timezone'
+
+    # Test 2: Verify JSON serialization produces RFC 3339 format with 'Z' suffix
+    json_str = dataset.model_dump_json()
+    data = json.loads(json_str)
+
+    # Check that datetime strings end with 'Z' (UTC timezone indicator)
+    assert data['release_date'].endswith('Z'), 'release_date must serialize with Z suffix'
+
+    if isinstance(dataset.start_date, type(dataset.release_date)):
+        assert data['start_date'].endswith('Z'), 'start_date must serialize with Z suffix'
+
+    if isinstance(dataset.end_date, type(dataset.release_date)):
+        assert data['end_date'].endswith('Z'), 'end_date must serialize with Z suffix'
+
+    if isinstance(dataset.init_date, type(dataset.release_date)):
+        assert data['init_date'].endswith('Z'), 'init_date must serialize with Z suffix'
+
+    # Test 3: Verify the format matches RFC 3339 date-time pattern
+    # Format should be: YYYY-MM-DDTHH:MM:SSZ
+    rfc3339_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+    assert re.match(rfc3339_pattern, data['release_date']), (
+        f"release_date '{data['release_date']}' must match RFC 3339 format"
+    )
+
+    if isinstance(dataset.start_date, type(dataset.release_date)):
+        assert re.match(rfc3339_pattern, data['start_date']), (
+            f"start_date '{data['start_date']}' must match RFC 3339 format"
+        )
+
+    if isinstance(dataset.end_date, type(dataset.release_date)):
+        assert re.match(rfc3339_pattern, data['end_date']), (
+            f"end_date '{data['end_date']}' must match RFC 3339 format"
+        )
 
 
 # Tests for CEFIDataCatalog functionality

@@ -3,7 +3,7 @@
 import asyncio
 import calendar
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Annotated, Literal
@@ -12,7 +12,7 @@ import aiofiles
 import aiohttp
 from async_lru import alru_cache
 from loguru import logger
-from pydantic import BaseModel, Field, HttpUrl, NaiveDatetime, computed_field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, computed_field
 
 from .tools import Variable
 
@@ -73,6 +73,10 @@ class CEFIDatasetMetadata(BaseModel):
     """CEFI dataset metadata, including variable name and units, frequency,
     coordinate ranges, and geographic region.
     """
+    # This ensures computed fields are included in schema
+    model_config = ConfigDict(
+        json_schema_mode_override='serialization',
+    )
 
     # Fields that are commented out exist in every CEFI dataset,
     # but are currently not considered relevant for the MCP server.
@@ -110,16 +114,16 @@ class CEFIDatasetMetadata(BaseModel):
 
     @computed_field
     @property
-    def start_date(self) -> str | NaiveDatetime:
+    def start_date(self) -> str | datetime:
         """The first time available in the dataset"""
         if self.cefi_date_range == 'N/A':
             return 'N/A'
         else:
-            return datetime.strptime(self.cefi_date_range[0:6] + '01', '%Y%m%d')
+            return datetime.strptime(self.cefi_date_range[0:6] + '01', '%Y%m%d').replace(tzinfo=UTC)
 
     @computed_field
     @property
-    def end_date(self) -> str | NaiveDatetime:
+    def end_date(self) -> str | datetime:
         """The last time available in the dataset"""
         if self.cefi_date_range == 'N/A':
             return 'N/A'
@@ -129,22 +133,22 @@ class CEFIDatasetMetadata(BaseModel):
             month = int(year_month[4:6])
             # Use the actual number of days in the month
             max_day = calendar.monthrange(year, month)[1]
-            return datetime.strptime(year_month + f'{max_day:02d}', '%Y%m%d')
+            return datetime.strptime(year_month + f'{max_day:02d}', '%Y%m%d').replace(tzinfo=UTC)
 
     @computed_field
     @property
-    def release_date(self) -> NaiveDatetime:
+    def release_date(self) -> datetime:
         """The date when the dataset was published. Newer dates are preferred."""
-        return datetime.strptime(self.cefi_release[1:9], '%Y%m%d')
+        return datetime.strptime(self.cefi_release[1:9], '%Y%m%d').replace(tzinfo=UTC)
 
     @computed_field
     @property
-    def init_date(self) -> str | NaiveDatetime:
+    def init_date(self) -> str | datetime:
         """The date when the dataset was published. Newer dates are generally preferred."""
         if self.cefi_init_date == 'N/A':
             return 'N/A'
         else:
-            return datetime.strptime(self.cefi_init_date[1:7] + '01', '%Y%m%d')
+            return datetime.strptime(self.cefi_init_date[1:7] + '01', '%Y%m%d').replace(tzinfo=UTC)
 
 
 class CEFIDataCatalog(BaseModel):
