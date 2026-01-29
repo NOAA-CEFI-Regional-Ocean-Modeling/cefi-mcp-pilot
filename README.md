@@ -17,14 +17,16 @@
 }
 ```
 
-## Local install through Docker
+## Local install through Docker / Podman
+
+Docker or Podman should work interchangeably.
 
 Build and run:
 ```
-docker build -t cefi-mcp-pilot . && docker run -p 8000:8000 cefi-mcp-pilot
+docker build -t cefi-mcp-pilot . && docker run -p 8080:8080 cefi-mcp-pilot
 ```
 
-Then, connect the client to `http://localhost:8000/mcp`
+Then, connect the client to `http://localhost:8080/mcp`
 
 # Tips
 
